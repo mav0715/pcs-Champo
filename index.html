@@ -494,6 +494,11 @@
     <select class="filter-select" id="filter-owner" onchange="applyFilters()">
       <option value="">All Owners</option>
     </select>
+    <select class="filter-select" id="filter-unit" onchange="applyFilters()">
+      <option value="">All Units</option>
+      <option value="PNP">PNP</option>
+      <option value="BDH">BDH</option>
+    </select>
     <select class="filter-select" id="filter-status" onchange="applyFilters()">
       <option value="">All Statuses</option>
       <option value="DELAY">Delayed</option>
@@ -505,11 +510,11 @@
 
   <!-- STAT CARDS -->
   <div class="stat-row">
-    <div class="stat-card blue">  <div class="stat-label">Active POs</div>    <div class="stat-value" id="stat-po">--</div>     <div class="stat-sub">in production</div></div>
-    <div class="stat-card green"> <div class="stat-label">On Time</div>        <div class="stat-value" id="stat-ontime">--</div>  <div class="stat-sub">processes on schedule</div></div>
-    <div class="stat-card red">   <div class="stat-label">Delayed</div>        <div class="stat-value" id="stat-delay">--</div>   <div class="stat-sub">processes behind</div></div>
-    <div class="stat-card amber"> <div class="stat-label">In Progress</div>    <div class="stat-value" id="stat-progress">--</div><div class="stat-sub">currently running</div></div>
-    <div class="stat-card purple"><div class="stat-label">On-Time Rate</div>   <div class="stat-value" id="stat-rate">--%</div>   <div class="stat-sub">overall performance</div></div>
+    <div class="stat-card blue"   style="cursor:pointer" onclick="statFilter('')"       title="Show all POs">  <div class="stat-label">Active POs</div>    <div class="stat-value" id="stat-po">--</div>     <div class="stat-sub">in production</div></div>
+    <div class="stat-card green"  style="cursor:pointer" onclick="statFilter('ON TIME')" title="Show on-time processes"><div class="stat-label">On Time</div>        <div class="stat-value" id="stat-ontime">--</div>  <div class="stat-sub">processes on schedule</div></div>
+    <div class="stat-card red"    style="cursor:pointer" onclick="statFilter('DELAY')"   title="Show delayed processes"><div class="stat-label">Delayed</div>        <div class="stat-value" id="stat-delay">--</div>   <div class="stat-sub">processes behind</div></div>
+    <div class="stat-card amber"  style="cursor:pointer" onclick="statFilter('IN PROGRESS')" title="Show in-progress"><div class="stat-label">In Progress</div>    <div class="stat-value" id="stat-progress">--</div><div class="stat-sub">currently running</div></div>
+    <div class="stat-card purple" style="cursor:pointer" onclick="statFilter('')"        title="Overall performance"><div class="stat-label">On-Time Rate</div>   <div class="stat-value" id="stat-rate">--%</div>   <div class="stat-sub">overall performance</div></div>
   </div>
 
   <!-- MAIN GRID -->
@@ -555,7 +560,7 @@
     <div class="panel">
       <div class="panel-header"><span class="panel-title">📅 Upcoming — Next 7 Days</span><span class="panel-badge ok" id="upcoming-badge">0 due</span></div>
       <div class="panel-body scrollable">
-        <table class="data-table"><thead><tr><th>Date</th><th class="hide-mobile">PO</th><th>Process</th><th class="hide-mobile">Owner</th><th>Status</th></tr></thead>
+        <table class="data-table"><thead><tr><th>Date</th><th class="hide-mobile">PO</th><th class="hide-mobile">Buyer</th><th>Process</th><th class="hide-mobile">Owner</th><th>Status</th></tr></thead>
         <tbody id="upcoming-body"></tbody></table>
       </div>
     </div>
@@ -590,7 +595,17 @@
       </div>
     </div>
   </div>
-
+  <!-- PROCESS DETAIL MODAL (owner query: planned date, delays, revisions, completion) -->
+  <div class="modal-overlay" id="proc-modal" onclick="if(event.target===this)closeProcModal()">
+    <div class="modal" style="max-width:700px">
+      <div class="modal-header">
+        <span class="modal-title" id="proc-modal-title">Process Detail</span>
+        <button class="modal-close" onclick="closeProcModal()">✕</button>
+      </div>
+      <div class="modal-meta" id="proc-modal-meta"></div>
+      <div class="modal-body" id="proc-modal-body" style="padding:16px 20px;display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+  </div>
 
 </div>
 
@@ -767,7 +782,26 @@ const fmt   = (d) => d ? d.toLocaleDateString('en-IN',{day:'2-digit',month:'shor
 const fmtFull = (d) => d ? d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'}) : '—';
 
 let _allData = [];      // full dataset cached for filters & drill-down
-let _filters = { buyer:'', po:'', owner:'', status:'' };
+let _filters = { buyer:'', po:'', owner:'', status:'', unit:'' };
+
+function statFilter(status) {
+  // Clicking a stat card filters by that status (or clears if empty)
+  document.getElementById('filter-status').value = status;
+  _filters.status = status;
+  const filtered = _allData.filter(r =>
+    (!_filters.buyer  || r.buyer  === _filters.buyer)  &&
+    (!_filters.po     || r.po     === _filters.po)     &&
+    (!_filters.owner  || r.owner  === _filters.owner)  &&
+    (!_filters.status || r.status === _filters.status) &&
+    (!_filters.unit   || r.variant?.includes(_filters.unit))
+  );
+  renderAll(filtered);
+  // Scroll down to All Active Processes to show filtered results
+  setTimeout(() => {
+    const el = document.getElementById('all-body');
+    if (el) el.closest('.panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 100);
+}
 
 function render(data) {
   _allData = data;
@@ -793,11 +827,13 @@ function applyFilters() {
   _filters.po     = document.getElementById('filter-po').value;
   _filters.owner  = document.getElementById('filter-owner').value;
   _filters.status = document.getElementById('filter-status').value;
+  _filters.unit   = document.getElementById('filter-unit').value;
   const filtered = _allData.filter(r =>
     (!_filters.buyer  || r.buyer  === _filters.buyer)  &&
     (!_filters.po     || r.po     === _filters.po)     &&
     (!_filters.owner  || r.owner  === _filters.owner)  &&
-    (!_filters.status || r.status === _filters.status)
+    (!_filters.status || r.status === _filters.status) &&
+    (!_filters.unit   || r.variant?.includes(_filters.unit) || r.variant?.includes(_filters.unit === 'BDH' ? 'BDH' : 'PNP'))
   );
   renderAll(filtered);
 }
@@ -807,7 +843,8 @@ function clearFilters() {
   document.getElementById('filter-po').value     = '';
   document.getElementById('filter-owner').value  = '';
   document.getElementById('filter-status').value = '';
-  _filters = { buyer:'', po:'', owner:'', status:'' };
+  document.getElementById('filter-unit').value   = '';
+  _filters = { buyer:'', po:'', owner:'', status:'', unit:'' };
   populateFilterDropdowns(_allData);
   renderAll(_allData);
 }
@@ -916,7 +953,93 @@ function closeModal() {
   document.getElementById('po-modal').classList.remove('open');
   document.body.style.overflow = '';
 }
-document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+document.addEventListener('keydown', e => { if(e.key==='Escape') { closeModal(); closeProcModal(); } });
+
+// ── PROCESS DETAIL — for owner queries (planned date, delays, revisions, completion)
+function openProcDetail(po, process, owner) {
+  const rows = _allData.filter(r => r.po === po && r.process === process);
+  if (!rows.length) return;
+  const r = rows[0];
+
+  const hasPred   = r.predicted && r.planned && r.predicted.getTime() !== r.planned.getTime();
+  const delayDays = r.delayDays || 0;
+  const isLate    = r.actual && r.planned && new Date(r.actual) > new Date(r.planned);
+  const daysLate  = isLate ? Math.round((new Date(r.actual) - new Date(r.planned)) / 86400000) : 0;
+  const plannedPast = r.planned && new Date(r.planned) < today && !r.status && !r.actual;
+
+  document.getElementById('proc-modal-title').textContent = `${process} — PO ${po}`;
+  document.getElementById('proc-modal-meta').innerHTML = `
+    <div class="modal-meta-item">PO: <strong>${po}</strong></div>
+    <div class="modal-meta-item">Buyer: <strong>${r.buyer}</strong></div>
+    <div class="modal-meta-item">Owner: <strong style="color:var(--accent)">${owner}</strong></div>
+    <div class="modal-meta-item">Status: <strong>${r.status || '—'}</strong></div>
+  `;
+
+  let html = '';
+
+  // Timeline card
+  html += `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+    <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted)">Timeline</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+      <div>
+        <div style="font-size:9px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:3px">Planned Date</div>
+        <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text)">${fmt(r.planned)}</div>
+        <div style="font-size:9px;color:var(--muted);margin-top:2px">Original commitment</div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:3px">Predicted Date</div>
+        <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:${hasPred ? 'var(--amber)' : 'var(--muted)'}">${hasPred ? fmt(r.predicted) : '—'}</div>
+        ${hasPred ? `<div style="font-size:9px;color:var(--amber);margin-top:2px">+${Math.round((r.predicted - r.planned)/86400000)}d shifted</div>` : '<div style="font-size:9px;color:var(--muted);margin-top:2px">No revision</div>'}
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:3px">Actual Completion</div>
+        <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:${r.actual ? (isLate ? 'var(--red)' : 'var(--green)') : 'var(--muted)'}">${fmt(r.actual)}</div>
+        ${r.actual ? `<div style="font-size:9px;color:${isLate ? 'var(--red)' : 'var(--green)'};margin-top:2px">${isLate ? daysLate+'d late' : 'On time ✓'}</div>` : '<div style="font-size:9px;color:var(--muted);margin-top:2px">Not done</div>'}
+      </div>
+    </div>
+  </div>`;
+
+  // Delay info card
+  if (delayDays > 0 || r.predCause) {
+    html += `<div style="background:rgba(231,76,60,0.06);border:1px solid rgba(231,76,60,0.2);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:8px">
+      <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--red)">Delay Info</div>
+      ${delayDays > 0 ? `<div style="font-size:12px"><span style="color:var(--muted)">Delay days recorded:</span> <strong style="color:var(--red)">${delayDays}d</strong></div>` : ''}
+      ${r.predCause  ? `<div style="font-size:12px"><span style="color:var(--muted)">Cause:</span> <strong>${r.predCause}</strong></div>` : ''}
+    </div>`;
+  }
+
+  // Owner notes / last update
+  if (r.ownerNotes) {
+    html += `<div style="background:rgba(243,156,18,0.06);border:1px solid rgba(243,156,18,0.2);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:6px">
+      <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--amber)">Owner's Last Update</div>
+      <div style="font-size:12px;line-height:1.5">${r.ownerNotes}</div>
+    </div>`;
+  }
+
+  // Meeting notes
+  if (r.remarks) {
+    html += `<div style="background:rgba(79,142,247,0.06);border:1px solid rgba(79,142,247,0.2);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:6px">
+      <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--accent)">Meeting Note</div>
+      <div style="font-size:12px;line-height:1.5">${r.remarks}</div>
+    </div>`;
+  }
+
+  // No owner update nudge
+  if (plannedPast) {
+    html += `<div style="background:rgba(243,156,18,0.08);border:1px solid rgba(243,156,18,0.3);border-radius:8px;padding:12px 16px;font-size:12px;color:var(--amber)">
+      ⚠️ <strong>Planned date has passed with no update from ${owner}.</strong> The owner has not submitted their form. This is the owner's responsibility — follow up with them directly.
+    </div>`;
+  }
+
+  document.getElementById('proc-modal-body').innerHTML = html;
+  document.getElementById('proc-modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeProcModal() {
+  document.getElementById('proc-modal').classList.remove('open');
+  document.body.style.overflow = '';
+}
 
 // ── MAIN RENDER ───────────────────────────────────────────────
 function renderAll(data) {
@@ -1042,44 +1165,71 @@ function renderAll(data) {
       </div>`;
     }).join('');
 
-  // ── Process heatmap
+  // ── Process heatmap — ordered by seq, includes all 20 processes
+  const PROC_ORDER = [
+    'Yarn','Dyeing','Fabric','Canvas Requirement','Canvas Source','Piping','Trims',
+    'Weaving','Wash','Tufting','Knitting','Embroidery Yarn','Embroidery',
+    'Printing','Foam Backing','Stitching','Testing','Pack & Trims','Final Packing','Final Inspection'
+  ];
   const procMap = {};
+  // Init all known processes
+  PROC_ORDER.forEach(p => procMap[p] = { onTime:0, delay:0, progress:0, pending:0 });
   data.forEach(r => {
-    if (!procMap[r.process]) procMap[r.process] = { onTime:0, delay:0, progress:0 };
-    if (r.status === 'ON TIME')          procMap[r.process].onTime++;
-    else if (r.status === 'DELAY')       procMap[r.process].delay++;
-    else if (r.status === 'IN PROGRESS') procMap[r.process].progress++;
+    const key = r.process;
+    if (!procMap[key]) procMap[key] = { onTime:0, delay:0, progress:0, pending:0 };
+    if (r.status === 'ON TIME' || r.status === 'COMPLETE') procMap[key].onTime++;
+    else if (r.status === 'DELAY')       procMap[key].delay++;
+    else if (r.status === 'IN PROGRESS') procMap[key].progress++;
+    else                                 procMap[key].pending++;
   });
-  document.getElementById('heatmap').innerHTML = Object.entries(procMap).map(([proc, c]) => {
+  // Only show processes that appear in current data + always show all 20
+  const heatEntries = PROC_ORDER.map(p => [p, procMap[p] || { onTime:0, delay:0, progress:0, pending:0 }]);
+  // Add any extra processes not in the list
+  Object.keys(procMap).forEach(p => { if (!PROC_ORDER.includes(p)) heatEntries.push([p, procMap[p]]); });
+
+  document.getElementById('heatmap').innerHTML = heatEntries.map(([proc, c]) => {
     let cls='hm-grey', val=0, label='idle';
-    if (c.delay > 0)      { cls='hm-red';   val=c.delay;    label='delayed'; }
-    else if (c.progress>0){ cls='hm-amber'; val=c.progress; label='running'; }
-    else if (c.onTime > 0){ cls='hm-green'; val=c.onTime;   label='on time'; }
+    if (c.delay > 0)       { cls='hm-red';   val=c.delay;    label='delayed'; }
+    else if (c.progress>0) { cls='hm-amber'; val=c.progress; label='running'; }
+    else if (c.onTime > 0) { cls='hm-green'; val=c.onTime;   label='on time'; }
+    else if (c.pending > 0){ cls='hm-grey';  val=c.pending;  label='pending'; }
     return `<div class="heatmap-cell ${cls}">
       <div class="hm-process">${proc}</div>
-      <div class="hm-count">${val}</div>
+      <div class="hm-count">${val||0}</div>
       <div class="hm-label">${label}</div>
     </div>`;
   }).join('');
 
-  // ── All active — now with Planned vs Predicted columns, clickable PO
-  const active = data.filter(r => r.status && r.status !== 'NA');
+  // ── All active — show ALL applicable processes (not just those with status)
+  // Processes from meeting form have blank status until owner fills form
+  const active = data.filter(r => r.applicable !== 'NO' && r.applicable !== 'NA');
   document.getElementById('all-badge').textContent = active.length + ' processes';
-  document.getElementById('all-body').innerHTML = active
-    .sort((a,b) => a.status==='DELAY' ? -1 : 1)
+  document.getElementById('all-body').innerHTML = active.length === 0
+    ? '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted);font-family:var(--mono);font-size:11px">No processes found — run meeting form to create groups</td></tr>'
+    : active
+    .sort((a,b) => {
+      // Sort: DELAY first, then blank (no owner update yet), then rest
+      const order = { 'DELAY': 0, '': 1, 'IN PROGRESS': 2, 'ON TIME': 3, 'COMPLETE': 4 };
+      return (order[a.status] ?? 1) - (order[b.status] ?? 1);
+    })
     .map(r => {
       const hasPred = r.predicted && r.planned && r.predicted.getTime() !== r.planned.getTime();
       const diffD   = hasPred ? Math.round((r.predicted - r.planned)/86400000) : 0;
-      return `<tr>
-        <td><span class="po-link" onclick="openModal('${r.po}')">${r.po}</span></td>
+      // Nudge: planned date passed but no status — owner hasn't filled form
+      const plannedPast = r.planned && new Date(r.planned) < today && !r.status && !r.actual;
+      const statusCell = plannedPast
+        ? `<span class="pill" style="background:rgba(243,156,18,0.15);color:var(--amber)" title="Planned date passed — owner has not submitted update">⚠ No Update</span>`
+        : pill(r.status);
+      return `<tr style="cursor:pointer" onclick="openProcDetail('${r.po.replace(/'/g,"\\'")}','${r.process.replace(/'/g,"\\'")}','${r.owner.replace(/'/g,"\\'")}')">
+        <td><span class="po-link" onclick="event.stopPropagation();openModal('${r.po}')">${r.po}</span></td>
         <td class="hide-mobile">${r.buyer}</td>
-        <td style="font-size:11px">${r.process}</td>
+        <td style="font-size:11px">${r.process}${r.variant && r.variant!=='Fixed'?`<span style="font-size:9px;color:var(--muted);margin-left:4px">(${r.variant})</span>`:''}</td>
         <td class="hide-mobile" style="font-size:11px;color:var(--muted)">${r.owner}</td>
         <td class="hide-mobile" style="font-family:var(--mono);font-size:10px">${fmt(r.planned)}</td>
         <td class="hide-mobile" style="font-family:var(--mono);font-size:10px;color:${hasPred?'var(--amber)':'var(--muted)'}">
           ${hasPred ? fmt(r.predicted)+'<span class="delta-badge">+'+diffD+'d</span>' : '—'}
         </td>
-        <td>${pill(r.status)}</td>
+        <td>${statusCell}</td>
       </tr>`;
     }).join('');
 
@@ -1094,6 +1244,7 @@ function renderAll(data) {
   document.getElementById('upcoming-body').innerHTML = next7.map(r => `<tr>
     <td style="font-family:var(--mono);font-size:10px;color:var(--accent)">${fmt(r.planned)}</td>
     <td class="hide-mobile"><span class="po-link" onclick="openModal('${r.po}')">${r.po}</span></td>
+    <td class="hide-mobile" style="font-size:11px;color:var(--muted)">${r.buyer}</td>
     <td style="font-size:11px">${r.process}</td>
     <td class="hide-mobile" style="font-size:11px;color:var(--muted)">${r.owner}</td>
     <td>${pill(r.status)}</td>
